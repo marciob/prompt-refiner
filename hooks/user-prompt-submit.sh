@@ -160,7 +160,7 @@ printf '%s\n' "$REFINED" > "$STATE_DIR/last-prompt.txt"
 case "$MODE" in
   edit)
     if copy_to_clipboard "$REFINED"; then
-      HOWTO="Refined prompt is in the clipboard. Press Esc to clear the input, then paste (Cmd+V), edit, send."
+      HOWTO="Refined prompt is in the clipboard. Press Ctrl+C once to clear the input, then paste (Cmd+V), edit, send."
     else
       HOWTO="No clipboard tool found. The refined prompt is in $STATE_DIR/last-prompt.txt."
     fi

@@ -6,29 +6,17 @@ A `UserPromptSubmit` hook catches prompts that start with `++`, hands them to a 
 
 ## Demo
 
-The session so far: the agent read `tests/test_auth.py`, ran `pytest`, saw `KeyError: 'session'`, and edited `auth/session.py` to rename the cookie to `sid`.
+A real session in `examples/demo-app`. The agent ran the tests and found one failure. Then the user typed `++ fix the broken test`.
 
-You type:
+![The hook message in Claude Code: the refined prompt, six seconds after the rough one](docs/demo.png)
 
-```
-++ fix the broken test
-```
+The refined prompt names the test, the file, the error, and the cause. It states one assumption. It asks for a verification step. Every fact came from the session transcript. The main agent saw none of it.
 
-Eight seconds later, this is in your clipboard:
+The whole flow, from the rough prompt to the passing test (sped up):
 
-```
-Fix tests/test_auth.py::test_login_sets_cookie, which fails with KeyError: 'session'
-because auth/session.py line 42 now sets the cookie as `sid`. Assume the rename to
-`sid` is intentional, so update the test to assert resp.cookies['sid'] and don't
-revert the cookie name in auth/session.py. If that assumption is wrong, or if the
-last edit to auth/session.py changed the cookie name again, stop and say so before
-changing anything. Don't touch other clients that read the cookie, but list any you
-notice. Check the result with pytest tests/test_auth.py -x.
-```
+![Type the rough prompt, read the refined one, clear, paste, edit, send](docs/demo.gif)
 
-The refined prompt names the file, the test, the error, and the cause. It states one assumption. It asks for verification. Every fact came from the session transcript. Nothing came from the main agent.
-
-The example is reproducible: it is the fixture in `tests/`, and `./tests/run.sh --live` regenerates it. Prompts in other languages come back in that language.
+To reproduce it: `cd examples/demo-app && claude`, type `run the tests`, then `++ fix the broken test`. Prompts in other languages come back in that language.
 
 ## How it works
 
@@ -85,7 +73,7 @@ The script adds one entry to `~/.claude/settings.json` and keeps your other hook
 
 1. Type `++` and your prompt. Press Enter.
 2. Wait 5 to 20 seconds. Claude Code shows "UserPromptSubmit operation blocked by hook" and the refined prompt under it. That header is Claude Code's fixed label for a blocked prompt. The block is the point.
-3. Press `Esc` to clear the input. Claude Code puts the blocked text back there.
+3. Press `Ctrl+C` once to clear the input. Claude Code puts the blocked text back there, and `Ctrl+C` removes it (`Ctrl+Y` restores it).
 4. Paste with `Cmd+V` (macOS) or `Ctrl+Shift+V` (most Linux terminals). Edit. Press Enter.
 
 ## Tune it
