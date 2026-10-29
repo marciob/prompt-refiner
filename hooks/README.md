@@ -13,7 +13,7 @@ Run `../scripts/install.sh`. It writes this entry and keeps the other hooks:
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/m/Desktop/dev/skills/skills/prompt-refiner/hooks/user-prompt-submit.sh",
+            "command": "/path/to/prompt-refiner/hooks/user-prompt-submit.sh",
             "timeout": 90,
             "statusMessage": "prompt-refiner"
           }

@@ -1,42 +1,100 @@
 # prompt-refiner
 
-A Claude Code hook that rewrites a rough prompt into a precise one before the main agent sees it.
+Type a rough prompt in Claude Code. Get a precise one back in your clipboard, before the agent sees anything.
 
-You type `++` and a rough prompt. A separate, fresh Claude reads the tail of your session and returns a refined prompt. The refined prompt goes to your clipboard. You paste it, edit it, and send it. The main agent never sees the rough prompt, the refiner, or the refiner's reasoning.
+A `UserPromptSubmit` hook catches prompts that start with `++`, hands them to a fresh headless Claude together with an extract of your session, and returns one refined paragraph. The main agent never sees the rough prompt, the refiner, or its reasoning.
 
-## Why a separate agent
+## Demo
 
-The obvious design asks the main agent to improve the prompt. That design has two faults. The main agent carries the full session context, so its view is already shaped by that context. And the improvement itself adds tokens to that context.
+The session so far: the agent read `tests/test_auth.py`, ran `pytest`, saw `KeyError: 'session'`, and edited `auth/session.py` to rename the cookie to `sid`.
 
-This hook starts a new headless Claude for each refinement. The new Claude reads a compact extract of the session transcript, not the live context. It returns only the refined prompt. In edit mode, the main agent gets zero extra tokens. In run mode, it gets one short block.
+You type:
+
+```
+++ fix the broken test
+```
+
+Eight seconds later, this is in your clipboard:
+
+```
+Fix tests/test_auth.py::test_login_sets_cookie, which fails with KeyError: 'session'
+because auth/session.py line 42 now sets the cookie as `sid`. Assume the rename to
+`sid` is intentional, so update the test to assert resp.cookies['sid'] and don't
+revert the cookie name in auth/session.py. If that assumption is wrong, or if the
+last edit to auth/session.py changed the cookie name again, stop and say so before
+changing anything. Don't touch other clients that read the cookie, but list any you
+notice. Check the result with pytest tests/test_auth.py -x.
+```
+
+The refined prompt names the file, the test, the error, and the cause. It states one assumption. It asks for verification. Every fact came from the session transcript. Nothing came from the main agent.
+
+The example is reproducible: it is the fixture in `tests/`, and `./tests/run.sh --live` regenerates it. Prompts in other languages come back in that language.
+
+## How it works
+
+```mermaid
+sequenceDiagram
+    participant You
+    participant Hook as prompt-refiner (hook)
+    participant Fresh as Fresh Claude (claude -p)
+    participant Main as Main agent
+    You->>Hook: ++ rough prompt
+    Hook->>Fresh: session extract + rough prompt
+    Fresh-->>Hook: refined prompt
+    Hook-->>You: clipboard + on-screen copy
+    Note over Main: sees nothing
+    You->>Main: paste, edit, send
+```
+
+1. The hook catches every prompt that starts with `++`.
+2. It reads the tail of the session transcript and sends it, with your rough prompt, to a new headless Claude.
+3. The new Claude returns one paragraph: the refined prompt.
+4. The hook copies it to the clipboard and blocks the original prompt.
+5. You clear the input, paste, edit, and press Enter.
+
+**Why a separate Claude?** The main agent is already shaped by its context. Asking it to improve a prompt adds more tokens to that context, and its view of the task is the view you may want to escape. A fresh Claude reads a compact extract, has no stake in the session, and leaves nothing behind.
 
 ## Two modes
 
-| Prefix | Mode | What happens |
-|---|---|---|
-| `++ <prompt>` | edit | The hook blocks the prompt, copies the refined prompt to the clipboard, and shows it. Paste with Cmd+V, edit, send. |
-| `++! <prompt>` | run | The hook lets the prompt through and tells the main agent to execute the refined version instead. |
+| You type | What happens |
+|---|---|
+| `++ prompt` | Refine, copy to the clipboard, block. You edit before you send. |
+| `++! prompt` | Refine and run. The main agent executes the refined version. You do not see it first. |
 
-Prompts without a prefix pass through untouched. For them, the hook exits in a few milliseconds.
+Every other prompt passes through untouched, in milliseconds.
 
 ## Install
 
-1. Run `scripts/install.sh`. The script adds the hook to `~/.claude/settings.json` with a 90-second timeout. It keeps your other hooks.
-2. Restart Claude Code, or open `/hooks` once, so the new hook loads.
-3. Type `++ fix the failing test` and press Enter. After 5 to 20 seconds, a message shows the refined prompt.
-4. Press Cmd+V. Edit the text. Press Enter.
+```sh
+git clone https://github.com/marciob/prompt-refiner.git
+cd prompt-refiner
+./scripts/install.sh
+```
 
-To remove the hook, run `scripts/install.sh --remove`.
+Then restart Claude Code, or type `/hooks` once, so the hook loads.
 
-## Requirements
+The script adds one entry to `~/.claude/settings.json` and keeps your other hooks. It saves a backup first. To uninstall, run `./scripts/install.sh --remove`.
+
+**Requirements**
 
 - Claude Code 2.1 or later, logged in. The refiner uses the same login as your session.
-- `jq` and `perl`. Both are present on macOS.
-- A clipboard tool: `pbcopy` on macOS, `wl-copy` or `xclip` on Linux. Without one, the hook saves the refined prompt to a file and names the file in the message.
+- `jq` and `perl`. Both come with macOS.
+- A clipboard tool: `pbcopy` on macOS, `wl-copy` or `xclip` on Linux.
+
+## Use
+
+1. Type `++` and your prompt. Press Enter.
+2. Wait 5 to 20 seconds. Claude Code shows "UserPromptSubmit operation blocked by hook" and the refined prompt under it. That header is Claude Code's fixed label for a blocked prompt. The block is the point.
+3. Press `Esc` to clear the input. Claude Code puts the blocked text back there.
+4. Paste with `Cmd+V` (macOS) or `Ctrl+Shift+V` (most Linux terminals). Edit. Press Enter.
+
+## Tune it
+
+`prompts/refiner.md` is the whole brain. It tells the refiner what a good prompt carries (goal, file anchors, constraints, deliverable, verification) and what to keep from you (language, voice, intent). Edit it and the next `++` uses it. No restart.
 
 ## Configuration
 
-Set these variables in the environment, or in `~/.config/prompt-refiner/env`.
+Set these in the environment, or in `~/.config/prompt-refiner/env`.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -46,44 +104,35 @@ Set these variables in the environment, or in `~/.config/prompt-refiner/env`.
 | `PROMPT_REFINER_STATE_DIR` | `~/.claude/prompt-refiner` | Where the hook writes logs and the last prompt. |
 | `PROMPT_REFINER_CLAUDE_BIN` | auto | Path to the `claude` binary, if the hook cannot find it. |
 | `PROMPT_REFINER_SYSTEM_FILE` | `prompts/refiner.md` | The refiner's instructions. |
-| `PROMPT_REFINER_DRY_RUN` | `0` | Set to `1` to skip the model call. For tests. |
-| `PROMPT_REFINER_NO_CLIPBOARD` | `0` | Set to `1` to skip the clipboard. For tests. |
 
-To change how prompts are refined, edit `prompts/refiner.md`. It is the one file to tune.
+## Debug
 
-## Files
-
-| Path | Role |
-|---|---|
-| `hooks/user-prompt-submit.sh` | The hook. Reads the prompt, calls the refiner, writes the hook output. |
-| `scripts/extract-context.sh` | Turns the session transcript into a compact text extract. |
-| `prompts/refiner.md` | The refiner's instructions. |
-| `scripts/install.sh` | Adds or removes the hook in `~/.claude/settings.json`. |
-| `tests/run.sh` | Offline tests. Add `--live` for one real model call. |
-
-The hook writes these files in the state directory:
+The hook writes to the state directory after every run:
 
 | File | Content |
 |---|---|
 | `last-prompt.txt` | The last refined prompt. Use it if the clipboard failed. |
-| `last-payload.txt` | What the refiner received. Use it to debug a weak result. |
+| `last-payload.txt` | What the refiner received. Read it when a result is weak. |
 | `last-run.log` | One line per run: mode, model, exit code, seconds, sizes. |
 | `last-error.log` | The stderr of the last run. |
-| `backups/` | Copies of `settings.json` made by `install.sh`. |
 
-## How the context extract works
-
-Claude Code gives the hook the path of the session transcript. The extract script reads the transcript and keeps four kinds of lines. These are your messages, the agent's text, each tool call with its file or command, and the first 300 characters of each tool result. It drops thinking blocks, system messages, and subagent side chains. It keeps the last 12,000 characters.
-
-Claude Code writes the transcript with a small delay. The last turn can be missing from the extract.
+If the refiner fails, the hook says so on screen and leaves your original prompt in the input. Remove the `++` and press Enter to send it as is.
 
 ## Limits
 
-- The hook cannot write into the input field. Claude Code hooks can add context or block a prompt. They cannot replace it. The clipboard is the bridge.
-- A long refined prompt can appear as a collapsed `[Pasted text]` block after Cmd+V. The refiner writes one paragraph to reduce this. If it happens, send the text as is, or lower the length in `prompts/refiner.md`.
+- Hooks can add context or block a prompt. They cannot replace it, and they cannot write into the input field. The clipboard is the bridge.
+- A long refined prompt can collapse into a `[Pasted text]` block after you paste. The refiner writes one paragraph to reduce this. If it happens, send it as is, or lower the length in `prompts/refiner.md`.
 - The hook runs where Claude Code runs. In a cloud session, the clipboard is not on your machine.
-- Each `++` costs one model call and 5 to 20 seconds.
+- Claude Code writes the transcript with a small delay. The last turn can be missing from the extract.
+- Each `++` is one extra model call, 5 to 20 seconds.
 
-## Test
+## Tests
 
-Run `tests/run.sh` for the offline tests. Run `tests/run.sh --live` to add one real refinement with the fixture transcript.
+```sh
+./tests/run.sh          # 8 offline tests, no model call
+./tests/run.sh --live   # adds one real refinement with the fixture transcript
+```
+
+## License
+
+MIT

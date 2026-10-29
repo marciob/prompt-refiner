@@ -145,9 +145,8 @@ if [ "$RC" -ne 0 ] || [ -z "$REFINED" ]; then
   [ "$RC" -eq 142 ] && DETAIL="timeout after ${TIMEOUT}s. $DETAIL"
   case "$MODE" in
     edit)
-      copy_to_clipboard "$RAW" || true
       json_block "prompt-refiner failed (rc=$RC). $DETAIL
-Your original prompt is in the clipboard. Cmd+V to paste it."
+Your original prompt is back in the input. Remove the ++ prefix to send it as is."
       ;;
     run)
       json_context "prompt-refiner: the ++! prefix asked for a refined prompt, but the refiner failed (rc=$RC). Treat the prompt as written, without the prefix."
@@ -161,7 +160,7 @@ printf '%s\n' "$REFINED" > "$STATE_DIR/last-prompt.txt"
 case "$MODE" in
   edit)
     if copy_to_clipboard "$REFINED"; then
-      HOWTO="Refined prompt is in the clipboard. Cmd+V to paste, edit, send."
+      HOWTO="Refined prompt is in the clipboard. Press Esc to clear the input, then paste (Cmd+V), edit, send."
     else
       HOWTO="No clipboard tool found. The refined prompt is in $STATE_DIR/last-prompt.txt."
     fi
